@@ -1,0 +1,67 @@
+exec.o: exec.c h/sdyn/exec.h h/sdyn/parser.h ggggc-unpatched/ggggc/gc.h \
+ ggggc-unpatched/ggggc/thread-locals.h ggggc-unpatched/ggggc/threads.h \
+ ggggc-unpatched/ggggc/threads-posix.h ggggc-unpatched/ggggc/gc-gembc.h \
+ ggggc-unpatched/ggggc/push.h h/sdyn/tokenizer.h h/sdyn/tokens.h \
+ h/sdyn/value.h ggggc-unpatched/ggggc/collections/map.h \
+ ggggc-unpatched/ggggc/collections/../gc.h \
+ ggggc-unpatched/ggggc/collections/unit.h h/sdyn/ir.h h/sdyn/nodes.h \
+ h/sdyn/nodex.h h/sdyn/parser.h
+intrinsics.o: intrinsics.c h/sdyn/exec.h h/sdyn/intrinsics.h \
+ h/sdyn/tokenizer.h h/sdyn/tokens.h h/sdyn/value.h \
+ ggggc-unpatched/ggggc/gc.h ggggc-unpatched/ggggc/thread-locals.h \
+ ggggc-unpatched/ggggc/threads.h ggggc-unpatched/ggggc/threads-posix.h \
+ ggggc-unpatched/ggggc/gc-gembc.h ggggc-unpatched/ggggc/push.h \
+ ggggc-unpatched/ggggc/collections/map.h \
+ ggggc-unpatched/ggggc/collections/../gc.h \
+ ggggc-unpatched/ggggc/collections/unit.h h/sdyn/ir.h h/sdyn/nodes.h \
+ h/sdyn/nodex.h h/sdyn/parser.h
+ir.o: ir.c ggggc-unpatched/ggggc/gc.h \
+ ggggc-unpatched/ggggc/thread-locals.h ggggc-unpatched/ggggc/threads.h \
+ ggggc-unpatched/ggggc/threads-posix.h ggggc-unpatched/ggggc/gc-gembc.h \
+ ggggc-unpatched/ggggc/push.h ggggc-unpatched/ggggc/collections/list.h \
+ ggggc-unpatched/ggggc/collections/../gc.h h/sdyn/ir.h h/sdyn/nodes.h \
+ h/sdyn/nodex.h h/sdyn/parser.h h/sdyn/tokenizer.h h/sdyn/tokens.h \
+ h/sdyn/value.h ggggc-unpatched/ggggc/collections/map.h \
+ ggggc-unpatched/ggggc/collections/unit.h h/sdyn/ir.h
+jit-x8664.o: jit-x8664.c h/sdyn/intrinsics.h h/sdyn/tokenizer.h \
+ h/sdyn/tokens.h h/sdyn/value.h ggggc-unpatched/ggggc/gc.h \
+ ggggc-unpatched/ggggc/thread-locals.h ggggc-unpatched/ggggc/threads.h \
+ ggggc-unpatched/ggggc/threads-posix.h ggggc-unpatched/ggggc/gc-gembc.h \
+ ggggc-unpatched/ggggc/push.h ggggc-unpatched/ggggc/collections/map.h \
+ ggggc-unpatched/ggggc/collections/../gc.h \
+ ggggc-unpatched/ggggc/collections/unit.h h/sdyn/ir.h h/sdyn/nodes.h \
+ h/sdyn/nodex.h h/sdyn/parser.h h/sdyn/nodes.h h/sdyn/value.h
+jit.o: jit.c h/sdyn/jit.h h/sdyn/value.h ggggc-unpatched/ggggc/gc.h \
+ ggggc-unpatched/ggggc/thread-locals.h ggggc-unpatched/ggggc/threads.h \
+ ggggc-unpatched/ggggc/threads-posix.h ggggc-unpatched/ggggc/gc-gembc.h \
+ ggggc-unpatched/ggggc/push.h ggggc-unpatched/ggggc/collections/map.h \
+ ggggc-unpatched/ggggc/collections/../gc.h \
+ ggggc-unpatched/ggggc/collections/unit.h h/sdyn/ir.h h/sdyn/nodes.h \
+ h/sdyn/nodex.h h/sdyn/parser.h h/sdyn/tokenizer.h h/sdyn/tokens.h \
+ smalljitasm/sja/sja.h smalljitasm/sja/buffer.h smalljitasm/sja/helpers.h \
+ smalljitasm/sja/x8664.h smalljitasm/sja/x8664-instructions.h jit-x8664.c \
+ h/sdyn/intrinsics.h h/sdyn/nodes.h h/sdyn/value.h
+main.o: main.c arg.h smalljitasm/sja/buffer.h smalljitasm/sja/helpers.h \
+ h/sdyn/exec.h h/sdyn/jit.h h/sdyn/value.h ggggc-unpatched/ggggc/gc.h \
+ ggggc-unpatched/ggggc/thread-locals.h ggggc-unpatched/ggggc/threads.h \
+ ggggc-unpatched/ggggc/threads-posix.h ggggc-unpatched/ggggc/gc-gembc.h \
+ ggggc-unpatched/ggggc/push.h ggggc-unpatched/ggggc/collections/map.h \
+ ggggc-unpatched/ggggc/collections/../gc.h \
+ ggggc-unpatched/ggggc/collections/unit.h h/sdyn/ir.h h/sdyn/nodes.h \
+ h/sdyn/nodex.h h/sdyn/parser.h h/sdyn/tokenizer.h h/sdyn/tokens.h
+parser.o: parser.c ggggc-unpatched/ggggc/gc.h \
+ ggggc-unpatched/ggggc/thread-locals.h ggggc-unpatched/ggggc/threads.h \
+ ggggc-unpatched/ggggc/threads-posix.h ggggc-unpatched/ggggc/gc-gembc.h \
+ ggggc-unpatched/ggggc/push.h ggggc-unpatched/ggggc/collections/list.h \
+ ggggc-unpatched/ggggc/collections/../gc.h h/sdyn/nodes.h h/sdyn/nodex.h \
+ h/sdyn/parser.h h/sdyn/tokenizer.h h/sdyn/tokens.h h/sdyn/tokenizer.h \
+ h/sdyn/nodex.h
+tokenizer.o: tokenizer.c h/sdyn/tokenizer.h h/sdyn/tokens.h
+value.o: value.c h/sdyn/jit.h h/sdyn/value.h ggggc-unpatched/ggggc/gc.h \
+ ggggc-unpatched/ggggc/thread-locals.h ggggc-unpatched/ggggc/threads.h \
+ ggggc-unpatched/ggggc/threads-posix.h ggggc-unpatched/ggggc/gc-gembc.h \
+ ggggc-unpatched/ggggc/push.h ggggc-unpatched/ggggc/collections/map.h \
+ ggggc-unpatched/ggggc/collections/../gc.h \
+ ggggc-unpatched/ggggc/collections/unit.h h/sdyn/ir.h h/sdyn/nodes.h \
+ h/sdyn/nodex.h h/sdyn/parser.h h/sdyn/tokenizer.h h/sdyn/tokens.h \
+ h/sdyn/value.h
