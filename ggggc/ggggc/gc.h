@@ -95,7 +95,7 @@ typedef size_t ggc_size_t;
 #undef GGGGC_STRINGIFY
 
 #ifdef GGGGC_DEBUG_MEMORY_CORRUPTION
-#define GGGGC_MEMORY_CORRUPTION_VAL 0x0DEFACED
+#define GGGGC_MEMORY_CORRUPTION_VAL 0xDEADBEEF
 #endif
 
 /* GC pool (forms a list) */
