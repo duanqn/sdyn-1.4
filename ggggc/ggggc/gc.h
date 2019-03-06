@@ -15,7 +15,7 @@
  * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
+#include <stdio.h>
 #ifndef GGGGC_GC_H
 #define GGGGC_GC_H 1
 
@@ -158,6 +158,7 @@ struct GGGGC_PointerStack {
 #define GGGGC_DESCRIPTORS_CONSTRUCTED
 #define GGGGC_DESCRIPTOR_CONSTRUCTOR(type) \
 static void __attribute__((constructor)) type ## __descriptorSlotConstructor() { \
+    printf("Allocating descriptor slot for " #type "\n");\
     ggggc_allocateDescriptorSlot(&type ## __descriptorSlot); \
 }
 
