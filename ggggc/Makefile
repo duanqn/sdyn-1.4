@@ -1,5 +1,5 @@
 CC=gcc
-ECFLAGS=-O3 -g
+ECFLAGS=-O3 -g -DGGGGC_DEBUG_MEMORY_CORRUPTION
 CFLAGS=-D_XOPEN_SOURCE=600 -I. $(ECFLAGS)
 AR=ar
 ARFLAGS=rc
@@ -12,6 +12,7 @@ COLLECTOROBJ = collector-ms.o
 #COLLECTOROBJ = collector-gembc.o
 OBJS=allocate.o $(COLLECTOROBJ) globals.o roots.o threads.o \
      collections/list.o collections/map.o
+TESTOBJS = collector-ms_test.o
 
 all: libggggc.a
 
@@ -29,6 +30,11 @@ push:
 
 clean:
 	rm -f $(OBJS) libggggc.a deps
+
+test: collector-test
+
+collector-test: $(OBJS) $(TESTOBJS)
+	$(CC) $(CFLAGS) $^ -o $@ -lpthread
 
 patch:
 	for i in *.c *.h collections/*.c ggggc/*.h ggggc/collections/*.h; \
