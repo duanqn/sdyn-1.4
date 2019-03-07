@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ggggc-internals.h"
+
 void ggggc_collect0(unsigned char gen);
 
 struct Pool{
@@ -246,7 +248,99 @@ void *ggggc_malloc(struct GGGGC_Descriptor *descriptor)
     return ret;
 }
 
+// Copied from gembc
+/* list of pointers to search and associated macros */
+#define TOSEARCH_SZ 1024
+struct ToSearch {
+    struct ToSearch *prev, *next;
+    unsigned short used;
+    void **buf;
+};
+static struct ToSearch toSearchList;
+
+#define TOSEARCH_INIT(toSearch) do { \
+    if (toSearchList.buf == NULL) { \
+        toSearchList.buf = (void **) malloc(TOSEARCH_SZ * sizeof(void *)); \
+        if (toSearchList.buf == NULL) { \
+            /* FIXME: handle somehow? */ \
+            perror("malloc"); \
+            abort(); \
+        } \
+    } \
+    toSearch = &toSearchList; \
+    toSearch->used = 0; \
+} while(0)
+#define TOSEARCH_NEXT(toSearch) do { \
+    if (!(toSearch)->next) { \
+        struct ToSearch *tsn = (struct ToSearch *) malloc(sizeof(struct ToSearch)); \
+        (toSearch)->next = tsn; \
+        tsn->prev = (toSearch); \
+        tsn->next = NULL; \
+        tsn->buf = (void **) malloc(TOSEARCH_SZ * sizeof(void *)); \
+        if (tsn->buf == NULL) { \
+            perror("malloc"); \
+            abort(); \
+        } \
+    } \
+    (toSearch) = (toSearch)->next; \
+    (toSearch)->used = 0; \
+} while(0)
+#define TOSEARCH_ADD(toSearch, ptr) do { \
+    if (toSearch->used >= TOSEARCH_SZ) TOSEARCH_NEXT(toSearch); \
+    toSearch->buf[toSearch->used++] = (ptr); \
+} while(0)
+#define TOSEARCH_POP(toSearch, type, into) do { \
+    into = (type) toSearch->buf[--toSearch->used]; \
+    if (toSearch->used == 0 && toSearch->prev) \
+        toSearch = toSearch->prev; \
+} while(0)
+
+#define TOSEARCH_FREE do { \
+    while(toSearchList->next){ \
+        if(toSearchList->buf){ \
+            free(toSearchList->buf); \
+        } \
+        toSearchList = toSearchList->next; \
+    } \
+    if(toSearchList->buf){ \
+        free(toSearchList->buf); \
+    } \
+} while(0)
+
 /* run a generation 0 collection */
 void ggggc_collect0(unsigned char gen)
 {
+    // I have no idea about the meaning of these variables
+    // I just copied them from gembc
+    struct GGGGC_PointerStackList pointerStackNode, *pslCur;
+    struct GGGGC_JITPointerStackList jitPointerStackNode, *jpslCur;
+    struct GGGGC_PointerStack *psCur;
+    void **jpsCur;
+    struct ToSearch *currentBlock;
+    ggc_size_t i;
+
+    /* initialize our roots */
+    pointerStackNode.pointerStack = ggggc_pointerStack;
+    pointerStackNode.next = ggggc_blockedThreadPointerStacks;
+    ggggc_rootPointerStackList = &pointerStackNode;
+    jitPointerStackNode.cur = ggc_jitPointerStack;
+    jitPointerStackNode.top = ggc_jitPointerStackTop;
+    jitPointerStackNode.next = ggggc_blockedThreadJITPointerStacks;
+    ggggc_rootJITPointerStackList = &jitPointerStackNode;
+
+    /* add our roots to the to-search list */
+    for (pslCur = ggggc_rootPointerStackList; pslCur; pslCur = pslCur->next) {
+        for (psCur = pslCur->pointerStack; psCur; psCur = psCur->next) {
+            for (i = 0; i < psCur->size; i++) {
+                TOSEARCH_ADD(currentBlock, psCur->pointers[i]);
+            }
+        }
+    }
+    for (jpslCur = ggggc_rootJITPointerStackList; jpslCur; jpslCur = jpslCur->next) {
+        for (jpsCur = jpslCur->cur; jpsCur < jpslCur->top; jpsCur++) {
+            TOSEARCH_ADD(currentBlock, jpsCur);
+        }
+    }
+
+    // trace all pointers
 }
