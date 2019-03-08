@@ -45,9 +45,25 @@ void poolDump(struct Pool *p){
         printf("%p:", ptr);
         for(int j = 0; j < 4; ++j){
             printf(" ");
-            for(int i = 0; i < sizeof(ggc_size_t) && ptr < (unsigned char *)(p->endptr); ++i){
-                printf("%02hhX", *ptr);
-                ++ptr;
+            if(*(ggc_size_t *)ptr == 0){
+                for(int i = sizeof(ggc_size_t) - 1; i >= 0 && ptr < (unsigned char *)(p->endptr); --i){
+                    printf("  ");
+                    ++ptr;
+                }
+            }
+            else{
+                int nonzero = 0;
+                for(int i = sizeof(ggc_size_t) - 1; i >= 0 && ptr < (unsigned char *)(p->endptr); --i){
+                    if(!nonzero && *(ptr+i) == 0){
+                        printf("  ");
+                    }
+                    else{
+                        nonzero = 1;
+                        printf("%02hhX", *(ptr+i));
+                    }
+                    
+                }
+                ptr += sizeof(ggc_size_t);
             }
         }
         printf("\n");
@@ -119,7 +135,7 @@ int ggggc_yield(){
 void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to protect, if applicable */
     ggc_size_t size /* size of object to allocate */
     ){
-    printf("Raw malloc %u bytes\n", size * sizeof(size));
+    printf("Raw malloc %lu bytes\n", size * sizeof(size));
     if(size * sizeof(size) > POOL_SIZE){
         printf("Requested space cannot fit in a pool.\n");
         return NULL;
@@ -155,7 +171,7 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
         mem->ggggc_memoryCorruptionCheck = GGGGC_MEMORY_CORRUPTION_VAL;
 #endif
         // Clear memory
-        memset((void *)mem + sizeof(struct GGGGC_Header), 0xAA, size * sizeof(ggc_size_t) - sizeof(struct GGGGC_Header));
+        memset((void *)mem + sizeof(struct GGGGC_Header), 0, size * sizeof(ggc_size_t) - sizeof(struct GGGGC_Header));
     }
     else{
         // go through free list
@@ -320,7 +336,7 @@ void ggggc_collect0(unsigned char gen)
     void **jpsCur;
     struct ToSearch *currentBlock;
     ggc_size_t i;
-    void * pointer;
+    ggc_size_t * pointer;
 
     /* initialize our roots */
     pointerStackNode.pointerStack = ggggc_pointerStack;
@@ -345,9 +361,9 @@ void ggggc_collect0(unsigned char gen)
         }
     }
 
-    // trace all pointers
+    // Mark
     while(!TOSEARCH_EMPTY(currentBlock)){
-        TOSEARCH_POP(currentBlock, void *, pointer);
+        TOSEARCH_POP(currentBlock, ggc_size_t *, pointer);
         if(pointer == NULL){
             continue;
         }
@@ -358,13 +374,25 @@ void ggggc_collect0(unsigned char gen)
             abort();
         }
 #endif
-        struct GGGGC_Descriptor *descriptor = ((struct GGGGC_Header *)pointer)->descriptor__ptr;
-        for(int i = 0; i < descriptor->size; ++i){
-            int word = i / sizeof(ggc_size_t);
-            unsigned int pos = i % sizeof(ggc_size_t);
-            if(descriptor->pointers[word] & (1 << pos) != 0){
-                TOSEARCH_ADD(currentBlock, (ggc_size_t *)pointer + i);
+        if(*pointer & 1){    // already marked
+            continue;
+        }
+        // The first word is the descriptor pointer in the GGGGC Header
+        *pointer |= 1;
+        struct GGGGC_Descriptor *descriptor = (struct GGGGC_Descriptor *)pointer;
+        descriptor = (struct GGGGC_Descriptor *)((ggc_size_t)descriptor & (~1));
+        TOSEARCH_ADD(currentBlock, pointer);  // The descriptor pointer should always be alive
+        if(descriptor->pointers[0] & 1 != 0){
+            // TODO: optimize
+            for(int i = 1; i < descriptor->size; ++i){
+                int word = i / sizeof(ggc_size_t);
+                unsigned int pos = i % sizeof(ggc_size_t);
+                if(descriptor->pointers[word] & (1 << pos) != 0){
+                    TOSEARCH_ADD(currentBlock, pointer + i);
+                }
             }
         }
     }
+
+    // Sweep
 }
