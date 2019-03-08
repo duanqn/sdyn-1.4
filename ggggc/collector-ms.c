@@ -295,6 +295,8 @@ static struct ToSearch toSearchList;
         toSearch = toSearch->prev; \
 } while(0)
 
+#define TOSEARCH_EMPTY(toSearch) (toSearch->used == 0)
+
 #define TOSEARCH_FREE do { \
     while(toSearchList->next){ \
         if(toSearchList->buf){ \
@@ -318,6 +320,7 @@ void ggggc_collect0(unsigned char gen)
     void **jpsCur;
     struct ToSearch *currentBlock;
     ggc_size_t i;
+    void * pointer;
 
     /* initialize our roots */
     pointerStackNode.pointerStack = ggggc_pointerStack;
@@ -343,4 +346,25 @@ void ggggc_collect0(unsigned char gen)
     }
 
     // trace all pointers
+    while(!TOSEARCH_EMPTY(currentBlock)){
+        TOSEARCH_POP(currentBlock, void *, pointer);
+        if(pointer == NULL){
+            continue;
+        }
+#ifdef GGGGC_DEBUG_MEMORY_CORRUPTION
+        /* check for pre-corruption */
+        if (((struct GGGGC_Header *)pointer)->ggggc_memoryCorruptionCheck != GGGGC_MEMORY_CORRUPTION_VAL) {
+            fprintf(stderr, "GGGGC: Canary corrupted!\n");
+            abort();
+        }
+#endif
+        struct GGGGC_Descriptor *descriptor = ((struct GGGGC_Header *)pointer)->descriptor__ptr;
+        for(int i = 0; i < descriptor->size; ++i){
+            int word = i / sizeof(ggc_size_t);
+            unsigned int pos = i % sizeof(ggc_size_t);
+            if(descriptor->pointers[word] & (1 << pos) != 0){
+                TOSEARCH_ADD(currentBlock, (ggc_size_t *)pointer + i);
+            }
+        }
+    }
 }
