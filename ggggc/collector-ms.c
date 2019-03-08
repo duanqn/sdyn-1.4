@@ -337,6 +337,7 @@ void ggggc_collect0(unsigned char gen)
     struct ToSearch *currentBlock;
     ggc_size_t i;
     ggc_size_t * pointer;
+    struct FreeObjHeader *freeListPointer, *secondLastFreeListPointer;
 
     /* initialize our roots */
     pointerStackNode.pointerStack = ggggc_pointerStack;
@@ -395,4 +396,38 @@ void ggggc_collect0(unsigned char gen)
     }
 
     // Sweep
+    for(currentPool = poolList; currentPool; currentPool = currentPool->next){
+        freeListPointer = currentPool->freelist = NULL;
+        secondLastFreeListPointer = NULL;
+        for(pointer = currentPool->memSpace; pointer < currentPool->endptr;){
+            if((*pointer & 1) != 0){
+                // marked
+                *pointer &= ~1; // unmark
+            }
+            else{
+                // Unmarked, construct free object header
+                // Note:
+                // the descriptor of this object might have been collected
+                // need to ensure that the 'size' field of a collected descriptor is not overwritten
+                // The 'size' field is the 3rd word
+                ((struct FreeObjHeader *)pointer)->size = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // overwrites the 2nd word
+                // descriptor__ptr is valid because this object has not been marked
+                ((struct FreeObjHeader *)pointer)->next = NULL; // overwrites the 1st word
+                // Do not zero the memory!
+
+                // Now maintain the free list
+                if(freeListPointer){
+                    // TODO: merge consecutive blocks of empty memory
+                    freeListPointer->next = (struct FreeObjHeader *)pointer;
+                    secondLastFreeListPointer = freeListPointer;
+                    freeListPointer = freeListPointer->next;
+                }
+                else{
+                    // The first free object in this pool
+                    freeListPointer = currentPool->freelist = (struct FreeObjHeader *)pointer;
+                }
+            }
+        }
+    }
+    currentPool = poolList; // reset to the first pool
 }
