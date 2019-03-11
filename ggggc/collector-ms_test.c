@@ -5,6 +5,8 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
     ggc_size_t size /* size of object to allocate */
     );
 void fullDump();
+void ggggc_collect0(unsigned char gen);
+void pointerStackDump();
 
 struct ListNode{
     struct GGGGC_Header header;
@@ -54,12 +56,20 @@ int main(){
 
     struct ListNode *head = NULL;
     head = append(0, head, ListNode_Descriptor);
+    printf("list head at %p\n", head);
+    printf("descriptor for list head: %p\n", head->header.descriptor__ptr);
+    pointerStackDump();
     GGC_PUSH_1(head);
+    pointerStackDump();
     for(ggc_size_t i = 1; i < 100; ++i){
         printf("Append node %u\n", i);
         append(i, head, ListNode_Descriptor);
     }
     fullDump();
+    ggggc_collect0(0);
+    fullDump();
     GGC_POP();
+    ggggc_collect0(0);
+    fullDump();
     return 0;
 }

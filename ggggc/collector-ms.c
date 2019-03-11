@@ -6,6 +6,7 @@
 #include "ggggc-internals.h"
 
 void ggggc_collect0(unsigned char gen);
+void pointerStackDump();
 
 struct Pool{
     struct Pool *next;
@@ -70,12 +71,27 @@ void poolDump(struct Pool *p){
     }
 }
 
+void objDump(struct GGGGC_Header *header){
+    ggc_size_t val = (ggc_size_t)header->descriptor__ptr;
+    val &= ~1;
+    printf("Object descriptor: %p\n", val);
+    struct GGGGC_Descriptor *descriptor = (struct GGGGC_Descriptor *)val;
+    val = descriptor->size;
+    printf("Object size: %lu\n", val);
+    for(unsigned i = 0; i < val; ++i){
+        printf("Offset %08x: %lx\n", i * sizeof(ggc_size_t), *((ggc_size_t *)header+i));
+    }
+}
+
 void fullDump(){
     printf("=====Full heap dump=====\n");
     printf("Global load factor: %lf\n", loadFactor);
     for(struct Pool *p = poolList; p; p = p->next){
         poolDump(p);
     }
+    printf("===Root pointers===\n");
+    pointerStackDump();
+    printf("=====End=====\n");
 }
 
 int allocNewPool(void ** pool)
@@ -325,6 +341,40 @@ static struct ToSearch toSearchList;
     } \
 } while(0)
 
+void pointerStackDump(){
+    struct GGGGC_PointerStackList pointerStackNode, *pslCur;
+    struct GGGGC_JITPointerStackList jitPointerStackNode, *jpslCur;
+    struct GGGGC_PointerStack *psCur;
+    void **jpsCur;
+    ggc_size_t i = 0;
+    pointerStackNode.pointerStack = ggggc_pointerStack;
+    pointerStackNode.next = ggggc_blockedThreadPointerStacks;
+    ggggc_rootPointerStackList = &pointerStackNode;
+    jitPointerStackNode.cur = ggc_jitPointerStack;
+    jitPointerStackNode.top = ggc_jitPointerStackTop;
+    jitPointerStackNode.next = ggggc_blockedThreadJITPointerStacks;
+    ggggc_rootJITPointerStackList = &jitPointerStackNode;
+
+    for (pslCur = ggggc_rootPointerStackList; pslCur; pslCur = pslCur->next) {
+        printf("Stack list at %p\n", pslCur);
+        for (psCur = pslCur->pointerStack; psCur; psCur = psCur->next) {
+            printf("Stack at %p\n", psCur);
+            printf("%lu pointers in this stack\n", psCur->size);
+            for (i = 0; i < psCur->size; i++) {
+                printf("Found root pointer %p\n", *(void **)psCur->pointers[i]);
+                if(*(void **)psCur->pointers[i]){
+                    objDump((struct GGGGC_Header *)(*(void **)psCur->pointers[i]));
+                }
+            }
+        }
+    }
+    for (jpslCur = ggggc_rootJITPointerStackList; jpslCur; jpslCur = jpslCur->next) {
+        for (jpsCur = jpslCur->cur; jpsCur < jpslCur->top; jpsCur++) {
+            printf("Found JIT root pointer %p\n", *(void **)jpsCur);
+        }
+    }
+}
+
 /* run a generation 0 collection */
 void ggggc_collect0(unsigned char gen)
 {
@@ -348,48 +398,69 @@ void ggggc_collect0(unsigned char gen)
     jitPointerStackNode.next = ggggc_blockedThreadJITPointerStacks;
     ggggc_rootJITPointerStackList = &jitPointerStackNode;
 
+    TOSEARCH_INIT(currentBlock);
+
     /* add our roots to the to-search list */
     for (pslCur = ggggc_rootPointerStackList; pslCur; pslCur = pslCur->next) {
         for (psCur = pslCur->pointerStack; psCur; psCur = psCur->next) {
+            printf("%lu pointers in this stack\n", psCur->size);
             for (i = 0; i < psCur->size; i++) {
-                TOSEARCH_ADD(currentBlock, psCur->pointers[i]);
+                printf("Adding root pointer %p\n", *(void **)psCur->pointers[i]);
+                printf("Current block: %p\n", currentBlock);
+                TOSEARCH_ADD(currentBlock, *(void **)psCur->pointers[i]);
             }
         }
     }
     for (jpslCur = ggggc_rootJITPointerStackList; jpslCur; jpslCur = jpslCur->next) {
         for (jpsCur = jpslCur->cur; jpsCur < jpslCur->top; jpsCur++) {
-            TOSEARCH_ADD(currentBlock, jpsCur);
+            printf("Adding JIT root pointer %p\n", *(void **)jpsCur);
+            TOSEARCH_ADD(currentBlock, *(void **)jpsCur);
         }
     }
 
     // Mark
+    printf("GC / Mark phase\n");
     while(!TOSEARCH_EMPTY(currentBlock)){
         TOSEARCH_POP(currentBlock, ggc_size_t *, pointer);
+        // pointer --> obj header[ descriptor_ptr  --> descripor
+        //                         DEADBEEF
+        //                         value ... ]
+        printf("Processing pointer %p\n", pointer);
         if(pointer == NULL){
             continue;
         }
+        printf("Obj descriptor at %p\n", ((struct GGGGC_Header *)pointer)->descriptor__ptr);
 #ifdef GGGGC_DEBUG_MEMORY_CORRUPTION
         /* check for pre-corruption */
         if (((struct GGGGC_Header *)pointer)->ggggc_memoryCorruptionCheck != GGGGC_MEMORY_CORRUPTION_VAL) {
             fprintf(stderr, "GGGGC: Canary corrupted!\n");
+            fprintf(stderr, "Canary address: %p\n", &(((struct GGGGC_Header *)pointer)->ggggc_memoryCorruptionCheck));
+            fprintf(stderr, "Got: %lu\tExpected: %lu\n", ((struct GGGGC_Header *)pointer)->ggggc_memoryCorruptionCheck, GGGGC_MEMORY_CORRUPTION_VAL);
             abort();
         }
 #endif
         if(*pointer & 1){    // already marked
+            printf("Object already marked.\n");
             continue;
         }
         // The first word is the descriptor pointer in the GGGGC Header
+        
+        struct GGGGC_Descriptor *descriptor = (struct GGGGC_Descriptor *)(*pointer);
+        printf("Adding pointer %p\n", (void *)(*pointer));
+        TOSEARCH_ADD(currentBlock, (void *)*pointer);  // The descriptor pointer should always be alive
         *pointer |= 1;
-        struct GGGGC_Descriptor *descriptor = (struct GGGGC_Descriptor *)pointer;
-        descriptor = (struct GGGGC_Descriptor *)((ggc_size_t)descriptor & (~1));
-        TOSEARCH_ADD(currentBlock, pointer);  // The descriptor pointer should always be alive
+        for(int i = 0; i < descriptor->size; ++i){
+            printf("Offset %08x: %lx\n", i * sizeof(ggc_size_t), *(pointer+i));
+        }
         if(descriptor->pointers[0] & 1 != 0){
             // TODO: optimize
             for(int i = 1; i < descriptor->size; ++i){
                 int word = i / sizeof(ggc_size_t);
                 unsigned int pos = i % sizeof(ggc_size_t);
-                if(descriptor->pointers[word] & (1 << pos) != 0){
-                    TOSEARCH_ADD(currentBlock, pointer + i);
+                printf("bitmap %lu\tpos %d\n", descriptor->pointers[word], pos);
+                if((descriptor->pointers[word] & (1 << pos)) != 0){
+                    TOSEARCH_ADD(currentBlock, (void *)*(pointer + i));
+                    printf("Adding pointer %p\n", (void *)(*(pointer + i)));
                 }
             }
         }
@@ -403,6 +474,7 @@ void ggggc_collect0(unsigned char gen)
             if((*pointer & 1) != 0){
                 // marked
                 *pointer &= ~1; // unmark
+                printf("Obj at %p is marked\n", pointer);
             }
             else{
                 // Unmarked, construct free object header
@@ -410,6 +482,7 @@ void ggggc_collect0(unsigned char gen)
                 // the descriptor of this object might have been collected
                 // need to ensure that the 'size' field of a collected descriptor is not overwritten
                 // The 'size' field is the 3rd word
+                printf("Obj at %p is not marked\n", pointer);
                 ((struct FreeObjHeader *)pointer)->size = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // overwrites the 2nd word
                 // descriptor__ptr is valid because this object has not been marked
                 ((struct FreeObjHeader *)pointer)->next = NULL; // overwrites the 1st word
@@ -427,6 +500,9 @@ void ggggc_collect0(unsigned char gen)
                     freeListPointer = currentPool->freelist = (struct FreeObjHeader *)pointer;
                 }
             }
+            printf("Descriptor can be found at %p\n", ((struct GGGGC_Header *)pointer)->descriptor__ptr);
+            printf("Increase pointer by %lu\n", ((struct GGGGC_Header *)pointer)->descriptor__ptr->size);
+            pointer += ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;
         }
     }
     currentPool = poolList; // reset to the first pool

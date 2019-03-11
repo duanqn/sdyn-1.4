@@ -1,5 +1,5 @@
 CC=gcc
-ECFLAGS=-O3 -g -DGGGGC_DEBUG_MEMORY_CORRUPTION
+ECFLAGS=-Og -g #-DGGGGC_DEBUG_MEMORY_CORRUPTION
 CFLAGS=-D_XOPEN_SOURCE=600 -I. $(ECFLAGS)
 AR=ar
 ARFLAGS=rc
@@ -29,7 +29,7 @@ push:
 	rm -f pushgen
 
 clean:
-	rm -f $(OBJS) libggggc.a deps
+	rm -f $(OBJS) $(TESTOBJS) libggggc.a deps
 
 test: collector-test
 
