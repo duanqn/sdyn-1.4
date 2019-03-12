@@ -307,7 +307,10 @@ struct GGGGC_Descriptor *ggggc_allocateDescriptorPA(ggc_size_t size)
         ((ggc_size_t)1<<(((ggc_size_t) (void *) &((struct GGGGC_Header *) 0)->descriptor__ptr)/sizeof(ggc_size_t))) |
         ((ggc_size_t)1<<((((ggc_size_t) (void *) &((GGC_voidpArray) 0)->length)/sizeof(ggc_size_t))))
         );
-
+    
+    #ifdef GGGGC_DEBUG_MEMORY_CORRUPTION
+    pointers[0] &= ~((ggc_size_t)1<<(((ggc_size_t) (void *) &((struct GGGGC_Header *) 0)->ggggc_memoryCorruptionCheck)/sizeof(ggc_size_t)));
+    #endif
     /* and allocate */
     return ggggc_allocateDescriptorL(size, pointers);
 }

@@ -5,6 +5,6 @@ mkdir results || ( printf 'Please delete the old results directory before runnin
 for i in *.sdyn
 do
     nm=${i%.sdyn}
-    ../sdyn $i > results/$nm || true
+    ../sdyn $i > results/$nm
     diff -u correct/$nm results/$nm
 done

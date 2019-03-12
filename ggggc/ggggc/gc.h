@@ -53,7 +53,7 @@ typedef size_t ggc_size_t;
 #endif
 
 #ifndef GGGGC_GENERATIONS
-#define GGGGC_GENERATIONS 2
+#define GGGGC_GENERATIONS 1     // we must get rid of the write barriers because we are defining our own pool structure
 #endif
 
 #ifndef GGGGC_POOL_SIZE
@@ -156,11 +156,18 @@ struct GGGGC_PointerStack {
 /* macro for making descriptors of types */
 #if defined(__GNUC__) && !defined(GGGGC_NO_GNUC_CONSTRUCTOR)
 #define GGGGC_DESCRIPTORS_CONSTRUCTED
+#ifdef CHATTY
 #define GGGGC_DESCRIPTOR_CONSTRUCTOR(type) \
 static void __attribute__((constructor)) type ## __descriptorSlotConstructor() { \
     printf("Allocating descriptor slot for " #type "\n");\
     ggggc_allocateDescriptorSlot(&type ## __descriptorSlot); \
 }
+#else
+#define GGGGC_DESCRIPTOR_CONSTRUCTOR(type) \
+static void __attribute__((constructor)) type ## __descriptorSlotConstructor() { \
+    ggggc_allocateDescriptorSlot(&type ## __descriptorSlot); \
+}
+#endif
 
 #elif defined(__cplusplus)
 #define GGGGC_DESCRIPTORS_CONSTRUCTED

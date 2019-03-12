@@ -35,12 +35,21 @@ static ggc_size_t allocated = 0;
 static ggc_size_t available = 0;
 static double loadFactor = 0;
 
+inline void assertPtrAligned(){
+    if(poolList){
+        if((ggc_size_t)(poolList->endptr) & (ggc_size_t)(sizeof(ggc_size_t) - 1)){
+            printf("Error: free space pointer not aligned.\n");
+            abort();
+        }
+    }
+}
+
 void poolDump(struct Pool *p){
     printf("===Pool dump===\n");
     printf("Next pool pointer: %p\n", p->next);
     printf("Free list pointer: %p\n", p->freelist);
     printf("Occupied space: [%p, %p)\n", p, (unsigned char *)p + GGGGC_POOL_BYTES);
-    printf("Visible space: [%p, %p)\n", p->memSpace, p->memSpace + POOL_SIZE);
+    printf("Visible space: [%p, %p)\n", p->memSpace, (unsigned char *)(p->memSpace) + POOL_SIZE);
     printf("Allocated space: [%p, %p)\n", p->memSpace, p->endptr);
     for(unsigned char *ptr = (unsigned char *)(p->memSpace); ptr < (unsigned char *)(p->endptr);){
         printf("%p:", ptr);
@@ -116,6 +125,7 @@ struct Pool *newPool(){
     ret->next = NULL;
     ret->freelist = NULL;
     ret->endptr = ret->memSpace;
+    assertPtrAligned();
 
     available += POOL_SIZE / sizeof(ggc_size_t);
     loadFactor = allocated / (double)available;
@@ -154,6 +164,7 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
     #ifdef CHATTY
     printf("Raw malloc %lu bytes\n", size * sizeof(size));
     #endif
+    assertPtrAligned();
     if(size * sizeof(size) > POOL_SIZE){
         printf("Requested space cannot fit in a pool.\n");
         return NULL;
@@ -178,9 +189,13 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
         size = HEADER_SIZE / sizeof(ggc_size_t);    // must ensure HEADER_SIZE is multiple of sizeof(ggc_size_t)
     }
     CHECK:
+    assertPtrAligned();
     // check if there is enough space in current pool
-    if(currentPool->memSpace + POOL_SIZE >= currentPool->endptr + size){
+    if((unsigned char *)(currentPool->memSpace) + POOL_SIZE >= currentPool->endptr + size){
         // bump pointer
+        #ifdef CHATTY
+        printf("*** Bump pointer ***\n");
+        #endif
         mem = (struct GGGGC_Header *)currentPool->endptr;
         currentPool->endptr += size;    // size * sizeof(ggc_size_t) bytes
         mem->descriptor__ptr = NULL;
@@ -189,11 +204,14 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
         mem->ggggc_memoryCorruptionCheck = GGGGC_MEMORY_CORRUPTION_VAL;
 #endif
         // Clear memory
-        memset((void *)mem + sizeof(struct GGGGC_Header), 0, size * sizeof(ggc_size_t) - sizeof(struct GGGGC_Header));
+        memset((void *)((unsigned char *)mem + sizeof(struct GGGGC_Header)), 0, size * sizeof(ggc_size_t) - sizeof(struct GGGGC_Header));
     }
     else{
         // go through free list
         // strategy: first
+        #ifdef CHATTY
+        printf("*** Search free list ***\n");
+        #endif
         for(struct FreeObjHeader *prev = NULL, *p = currentPool->freelist; p; prev = p, p = p->next){
             if(p->size == size){
                 // perfect
@@ -234,6 +252,9 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
             // Don't recycle the descriptor
             if(!GC_ed){
                 GGC_PUSH_1(*descriptor);
+                #ifdef CHATTY
+                printf("*** GC during mallocRaw ***\n");
+                #endif
                 ggggc_collect0(0);
                 GGC_POP();
                 GC_ed = 1;
@@ -248,9 +269,15 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
             }
             else{
                 if(!expanded){
+                    #ifdef CHATTY
+                    printf("*** Allocate new pool ***\n");
+                    #endif
                     // allocate new pools
                     err = 0;
                     while(err == 0 && loadFactor > LOAD_IDEAL){
+                        #ifdef CHATTY
+                        printf("*** 1 new pool appended ***\n");
+                        #endif
                         err = appendNewPool();
                     }
                     expanded = 1;
@@ -264,9 +291,14 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
         else{
             // must set this pointer AFTER maintaining linked list
             mem->descriptor__ptr = NULL;
+            #ifdef GGGGC_DEBUG_MEMORY_CORRUPTION
+            /* set its canary */
+            mem->ggggc_memoryCorruptionCheck = GGGGC_MEMORY_CORRUPTION_VAL;
+            #endif
             memset((void *)mem + sizeof(struct GGGGC_Header), 0xAA, size * sizeof(ggc_size_t) - sizeof(struct GGGGC_Header));
         }
     }
+    assertPtrAligned();
 
     // maintain load factor
     allocated += size;
@@ -277,7 +309,12 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
 /* allocate an object */
 void *ggggc_malloc(struct GGGGC_Descriptor *descriptor)
 {
+    #ifdef CHATTY
+    //printf("malloc with descriptor at %p\n", descriptor);
+    //objDump((struct GGGGC_Header *)descriptor);
+    #endif
     struct GGGGC_Header *ret = (struct GGGGC_Header *) ggggc_mallocRaw(&descriptor, descriptor->size);
+    assertPtrAligned();
     ret->descriptor__ptr = descriptor;
     return ret;
 }
