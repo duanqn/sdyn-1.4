@@ -42,7 +42,11 @@ int main(){
     genesis = ggggc_mallocRaw(NULL, sizeof(struct GGGGC_Descriptor) / sizeof(ggc_size_t));
     genesis->header.descriptor__ptr = genesis;  // self-descriptive
     genesis->size = sizeof(struct GGGGC_Descriptor) / sizeof(ggc_size_t);
-    genesis->pointers[0] = 3;
+    #ifndef GGGGC_DEBUG_MEMORY_CORRUPTION
+    genesis->pointers[0] = 0x3;
+    #else
+    genesis->pointers[0] = 0x5;
+    #endif
     fullDump();
     
     struct GGGGC_Descriptor *ListNode_Descriptor = ggggc_malloc(genesis);
@@ -62,6 +66,9 @@ int main(){
         printf("Append node %u\n", i);
         append(i, head, ListNode_Descriptor);
     }
+    ggggc_collect0(0);
+    fullDump();
+    head = NULL;
     ggggc_collect0(0);
     fullDump();
     GGC_POP();
