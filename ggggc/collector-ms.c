@@ -151,7 +151,9 @@ int ggggc_yield(){
 void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to protect, if applicable */
     ggc_size_t size /* size of object to allocate */
     ){
+    #ifdef CHATTY
     printf("Raw malloc %lu bytes\n", size * sizeof(size));
+    #endif
     if(size * sizeof(size) > POOL_SIZE){
         printf("Requested space cannot fit in a pool.\n");
         return NULL;
@@ -403,33 +405,45 @@ void ggggc_collect0(unsigned char gen)
     /* add our roots to the to-search list */
     for (pslCur = ggggc_rootPointerStackList; pslCur; pslCur = pslCur->next) {
         for (psCur = pslCur->pointerStack; psCur; psCur = psCur->next) {
+            #ifdef CHATTY
             printf("%lu pointers in this stack\n", psCur->size);
+            #endif
             for (i = 0; i < psCur->size; i++) {
+                #ifdef CHATTY
                 printf("Adding root pointer %p\n", *(void **)psCur->pointers[i]);
                 printf("Current block: %p\n", currentBlock);
+                #endif
                 TOSEARCH_ADD(currentBlock, *(void **)psCur->pointers[i]);
             }
         }
     }
     for (jpslCur = ggggc_rootJITPointerStackList; jpslCur; jpslCur = jpslCur->next) {
         for (jpsCur = jpslCur->cur; jpsCur < jpslCur->top; jpsCur++) {
+            #ifdef CHATTY
             printf("Adding JIT root pointer %p\n", *(void **)jpsCur);
+            #endif
             TOSEARCH_ADD(currentBlock, *(void **)jpsCur);
         }
     }
 
     // Mark
+    #ifdef CHATTY
     printf("GC / Mark phase\n");
+    #endif
     while(!TOSEARCH_EMPTY(currentBlock)){
         TOSEARCH_POP(currentBlock, ggc_size_t *, pointer);
         // pointer --> obj header[ descriptor_ptr  --> descripor
         //                         DEADBEEF
         //                         value ... ]
+        #ifdef CHATTY
         printf("Processing pointer %p\n", pointer);
+        #endif
         if(pointer == NULL){
             continue;
         }
+        #ifdef CHATTY
         printf("Obj descriptor at %p\n", ((struct GGGGC_Header *)pointer)->descriptor__ptr);
+        #endif
 #ifdef GGGGC_DEBUG_MEMORY_CORRUPTION
         /* check for pre-corruption */
         if (((struct GGGGC_Header *)pointer)->ggggc_memoryCorruptionCheck != GGGGC_MEMORY_CORRUPTION_VAL) {
@@ -440,27 +454,37 @@ void ggggc_collect0(unsigned char gen)
         }
 #endif
         if(*pointer & 1){    // already marked
+            #ifdef CHATTY
             printf("Object already marked.\n");
+            #endif
             continue;
         }
         // The first word is the descriptor pointer in the GGGGC Header
         
         struct GGGGC_Descriptor *descriptor = (struct GGGGC_Descriptor *)(*pointer);
+        #ifdef CHATTY
         printf("Adding pointer %p\n", (void *)(*pointer));
+        #endif
         TOSEARCH_ADD(currentBlock, (void *)*pointer);  // The descriptor pointer should always be alive
         *pointer |= 1;
+        #ifdef CHATTY
         for(int i = 0; i < descriptor->size; ++i){
             printf("Offset %08x: %lx\n", i * sizeof(ggc_size_t), *(pointer+i));
         }
+        #endif
         if(descriptor->pointers[0] & 1 != 0){
             // TODO: optimize
             for(int i = 1; i < descriptor->size; ++i){
                 int word = i / sizeof(ggc_size_t);
                 unsigned int pos = i % sizeof(ggc_size_t);
+                #ifdef CHATTY
                 printf("bitmap %lu\tpos %d\n", descriptor->pointers[word], pos);
+                #endif
                 if((descriptor->pointers[word] & (1 << pos)) != 0){
                     TOSEARCH_ADD(currentBlock, (void *)*(pointer + i));
+                    #ifdef CHATTY
                     printf("Adding pointer %p\n", (void *)(*(pointer + i)));
+                    #endif
                 }
             }
         }
@@ -474,7 +498,9 @@ void ggggc_collect0(unsigned char gen)
             if((*pointer & 1) != 0){
                 // marked
                 *pointer &= ~1; // unmark
+                #ifdef CHATTY
                 printf("Obj at %p is marked\n", pointer);
+                #endif
             }
             else{
                 // Unmarked, construct free object header
@@ -482,7 +508,9 @@ void ggggc_collect0(unsigned char gen)
                 // the descriptor of this object might have been collected
                 // need to ensure that the 'size' field of a collected descriptor is not overwritten
                 // The 'size' field is the 3rd word
+                #ifdef CHATTY
                 printf("Obj at %p is not marked\n", pointer);
+                #endif
                 ((struct FreeObjHeader *)pointer)->size = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // overwrites the 2nd word
                 // descriptor__ptr is valid because this object has not been marked
                 ((struct FreeObjHeader *)pointer)->next = NULL; // overwrites the 1st word
@@ -500,8 +528,10 @@ void ggggc_collect0(unsigned char gen)
                     freeListPointer = currentPool->freelist = (struct FreeObjHeader *)pointer;
                 }
             }
+            #ifdef CHATTY
             printf("Descriptor can be found at %p\n", ((struct GGGGC_Header *)pointer)->descriptor__ptr);
             printf("Increase pointer by %lu\n", ((struct GGGGC_Header *)pointer)->descriptor__ptr->size);
+            #endif
             pointer += ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;
         }
     }
