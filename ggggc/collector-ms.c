@@ -387,7 +387,7 @@ void ggggc_collect0(unsigned char gen)
     struct GGGGC_PointerStack *psCur;
     void **jpsCur;
     struct ToSearch *currentBlock;
-    ggc_size_t i;
+    ggc_size_t wordval;
     ggc_size_t * pointer;
     struct FreeObjHeader *freeListPointer, *secondLastFreeListPointer;
 
@@ -408,12 +408,12 @@ void ggggc_collect0(unsigned char gen)
             #ifdef CHATTY
             printf("%lu pointers in this stack\n", psCur->size);
             #endif
-            for (i = 0; i < psCur->size; i++) {
+            for (wordval = 0; wordval < psCur->size; wordval++) {
                 #ifdef CHATTY
-                printf("Adding root pointer %p\n", *(void **)psCur->pointers[i]);
+                printf("Adding root pointer %p\n", *(void **)psCur->pointers[wordval]);
                 printf("Current block: %p\n", currentBlock);
                 #endif
-                TOSEARCH_ADD(currentBlock, *(void **)psCur->pointers[i]);
+                TOSEARCH_ADD(currentBlock, *(void **)psCur->pointers[wordval]);
             }
         }
     }
@@ -474,16 +474,16 @@ void ggggc_collect0(unsigned char gen)
         #endif
         if(descriptor->pointers[0] & 1 != 0){
             // TODO: optimize
-            for(int i = 1; i < descriptor->size; ++i){
-                int word = i / sizeof(ggc_size_t);
-                unsigned int pos = i % sizeof(ggc_size_t);
+            for(wordval = 1; wordval < descriptor->size; ++wordval){
+                int word = wordval / sizeof(ggc_size_t);
+                unsigned int pos = wordval % sizeof(ggc_size_t);
                 #ifdef CHATTY
                 printf("bitmap %lu\tpos %d\n", descriptor->pointers[word], pos);
                 #endif
                 if((descriptor->pointers[word] & (1 << pos)) != 0){
-                    TOSEARCH_ADD(currentBlock, (void *)*(pointer + i));
+                    TOSEARCH_ADD(currentBlock, (void *)*(pointer + wordval));
                     #ifdef CHATTY
-                    printf("Adding pointer %p\n", (void *)(*(pointer + i)));
+                    printf("Adding pointer %p\n", (void *)(*(pointer + wordval)));
                     #endif
                 }
             }
@@ -491,6 +491,7 @@ void ggggc_collect0(unsigned char gen)
     }
 
     // Sweep
+    // wordval used to keep the next step length
     for(currentPool = poolList; currentPool; currentPool = currentPool->next){
         freeListPointer = currentPool->freelist = NULL;
         secondLastFreeListPointer = NULL;
@@ -498,6 +499,7 @@ void ggggc_collect0(unsigned char gen)
             if((*pointer & 1) != 0){
                 // marked
                 *pointer &= ~1; // unmark
+                wordval = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // record this now
                 #ifdef CHATTY
                 printf("Obj at %p is marked\n", pointer);
                 #endif
@@ -511,6 +513,7 @@ void ggggc_collect0(unsigned char gen)
                 #ifdef CHATTY
                 printf("Obj at %p is not marked\n", pointer);
                 #endif
+                wordval = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // record this now
                 ((struct FreeObjHeader *)pointer)->size = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // overwrites the 2nd word
                 // descriptor__ptr is valid because this object has not been marked
                 ((struct FreeObjHeader *)pointer)->next = NULL; // overwrites the 1st word
@@ -529,10 +532,9 @@ void ggggc_collect0(unsigned char gen)
                 }
             }
             #ifdef CHATTY
-            printf("Descriptor can be found at %p\n", ((struct GGGGC_Header *)pointer)->descriptor__ptr);
-            printf("Increase pointer by %lu\n", ((struct GGGGC_Header *)pointer)->descriptor__ptr->size);
+            printf("Increase pointer by %lu\n", wordval);
             #endif
-            pointer += ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;
+            pointer += wordval;
         }
     }
     currentPool = poolList; // reset to the first pool
