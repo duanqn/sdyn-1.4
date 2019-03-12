@@ -39,7 +39,6 @@ struct ListNode * append(ggc_size_t x, struct ListNode *head, struct GGGGC_Descr
 
 int main(){
     struct GGGGC_Descriptor *genesis = NULL;
-    fullDump();
     genesis = ggggc_mallocRaw(NULL, sizeof(struct GGGGC_Descriptor) / sizeof(ggc_size_t));
     genesis->header.descriptor__ptr = genesis;  // self-descriptive
     genesis->size = sizeof(struct GGGGC_Descriptor) / sizeof(ggc_size_t);
@@ -58,18 +57,13 @@ int main(){
     head = append(0, head, ListNode_Descriptor);
     printf("list head at %p\n", head);
     printf("descriptor for list head: %p\n", head->header.descriptor__ptr);
-    pointerStackDump();
     GGC_PUSH_1(head);
-    pointerStackDump();
     for(ggc_size_t i = 1; i < 100; ++i){
         printf("Append node %u\n", i);
         append(i, head, ListNode_Descriptor);
     }
-    fullDump();
     ggggc_collect0(0);
     fullDump();
     GGC_POP();
-    ggggc_collect0(0);
-    fullDump();
     return 0;
 }
