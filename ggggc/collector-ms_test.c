@@ -67,9 +67,13 @@ int main(){
         append(i, head, ListNode_Descriptor);
     }
     ggggc_collect0(0);
-    fullDump();
     head = NULL;
     ggggc_collect0(0);
+    head = append(0, head, ListNode_Descriptor);
+    for(ggc_size_t i = 1; i < 100; ++i){
+        printf("Append node %u\n", i);
+        append(i, head, ListNode_Descriptor);
+    }
     fullDump();
     GGC_POP();
     return 0;

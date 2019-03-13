@@ -34,14 +34,42 @@ static struct Pool *lastPool = NULL;
 static ggc_size_t allocated = 0;
 static ggc_size_t available = 0;
 static double loadFactor = 0;
+static int poolCount = 0;
 
-inline void assertPtrAligned(){
-    if(poolList){
-        if((ggc_size_t)(poolList->endptr) & (ggc_size_t)(sizeof(ggc_size_t) - 1)){
-            printf("Error: free space pointer not aligned.\n");
-            abort();
-        }
+static inline void assertPtrAligned(void *ptr){
+    if((ggc_size_t)(ptr) & (ggc_size_t)(sizeof(ggc_size_t) - 1)){
+        printf("Error: free space pointer not aligned.\n");
+        abort();
     }
+}
+
+inline ggc_size_t * maskMarks(ggc_size_t val){
+    val &= (~0x3);
+    return (ggc_size_t *)val;
+}
+
+inline void markPointed(ggc_size_t *pos){
+    *pos |= 0x1;
+}
+
+inline void unmarkPointed(ggc_size_t *pos){
+    *pos &= (~0x1);
+}
+
+inline void markFree(ggc_size_t *pos){
+    *pos |= 0x2;
+}
+
+inline void unmarkFree(ggc_size_t *pos){
+    *pos &= (~0x2);
+}
+
+inline int testPointed(ggc_size_t *pos){
+    return (*pos) & 0x1;
+}
+
+inline int testFree(ggc_size_t *pos){
+    return (*pos) & 0x2;
 }
 
 void poolDump(struct Pool *p){
@@ -103,12 +131,63 @@ void fullDump(){
     printf("=====End=====\n");
 }
 
+void freeListDump(struct Pool *pool){
+    struct FreeObjHeader *header = pool->freelist;
+    printf("*** Freelist of pool %p:\n", pool);
+    while(header){
+        if(!testFree(header)){
+            printf("Object on free list not marked as free\n");
+            abort();
+        }
+        printf("%p\n", header);
+        header = maskMarks((ggc_size_t)(header->next));
+    }
+    printf("***End\n");
+}
+
+static inline void assertHeapPointer(void * ptr){
+    if(!ptr){
+        return;
+    }
+    struct Pool * poolptr = GGGGC_POOL_OF(ptr);
+    for(struct Pool *p = poolList; p; p = p->next){
+        if(p == poolptr){
+            return;
+        }
+    }
+    abort();
+}
+
+static void assertParsableHeap(){
+    for(struct Pool *pool = poolList; pool; pool = pool->next){
+        ggc_size_t *objPointer = pool->memSpace;
+        while(objPointer != pool->endptr){
+            if(testPointed(objPointer)){
+                printf("Pointer should not be marked\n");
+                abort();
+            }
+            if(objPointer > pool->endptr){
+                printf("Heap parsability lost\n");
+                abort();
+            }
+            if(testFree(objPointer)){
+                objPointer += ((struct FreeObjHeader *)objPointer)->size;
+            }
+            else{
+                assertHeapPointer(*objPointer);
+                objPointer += ((struct GGGGC_Descriptor *)(*objPointer))->size;
+            }
+        }
+    }
+}
+
 int allocNewPool(void ** pool)
 {
     void *ret;
     if ((errno = posix_memalign(pool, GGGGC_POOL_BYTES, GGGGC_POOL_BYTES))) {
         return -1;
     }
+    ++poolCount;
     return 0;
 }
 
@@ -125,7 +204,7 @@ struct Pool *newPool(){
     ret->next = NULL;
     ret->freelist = NULL;
     ret->endptr = ret->memSpace;
-    assertPtrAligned();
+    assertPtrAligned(ret->endptr);
 
     available += POOL_SIZE / sizeof(ggc_size_t);
     loadFactor = allocated / (double)available;
@@ -141,6 +220,7 @@ int appendNewPool(){
     }
     if(lastPool){
         lastPool->next = p;
+        lastPool = p;
     }
     else{
         // Pool list does not exist
@@ -164,7 +244,6 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
     #ifdef CHATTY
     printf("Raw malloc %lu bytes\n", size * sizeof(size));
     #endif
-    assertPtrAligned();
     if(size * sizeof(size) > POOL_SIZE){
         printf("Requested space cannot fit in a pool.\n");
         return NULL;
@@ -184,12 +263,13 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
         }
         currentPool = poolList;
     }
+    assertPtrAligned(currentPool->endptr);
     // must have enough room for the header
     if(size * sizeof(ggc_size_t) < HEADER_SIZE){
         size = HEADER_SIZE / sizeof(ggc_size_t);    // must ensure HEADER_SIZE is multiple of sizeof(ggc_size_t)
     }
     CHECK:
-    assertPtrAligned();
+    assertPtrAligned(currentPool->endptr);
     // check if there is enough space in current pool
     if((unsigned char *)(currentPool->memSpace) + POOL_SIZE >= currentPool->endptr + size){
         // bump pointer
@@ -212,16 +292,29 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
         #ifdef CHATTY
         printf("*** Search free list ***\n");
         #endif
-        for(struct FreeObjHeader *prev = NULL, *p = currentPool->freelist; p; prev = p, p = p->next){
+        for(struct FreeObjHeader *prev = NULL, *p = currentPool->freelist; p;){
+            if(!testFree((ggc_size_t *)p)){
+                printf("Object not marked as free\n");
+                assertParsableHeap();
+                abort();
+            }
             if(p->size == size){
                 // perfect
                 mem = (struct GGGGC_Header *)p;
                 // remove p from free list
                 if(prev != NULL){
+                    if(!testFree(p) || !testFree(prev)){
+                        printf("p and prev should both be marked.\n");
+                        abort();
+                    }
                     prev->next = p->next;
                 }
                 else{
-                    currentPool->freelist = p->next;
+                    currentPool->freelist = (struct FreeObjHeader *)maskMarks((ggc_size_t)(p->next));
+                    if(currentPool->freelist!= NULL && !testFree(currentPool->freelist)){
+                        printf("p->next should both be marked.\n");
+                        abort();
+                    }
                 }
                 foundFreeSpace = 1;
                 break;
@@ -229,18 +322,24 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
             else if(p->size >= size + sizeof(struct FreeObjHeader) / sizeof(ggc_size_t)){
                 // split
                 mem = (struct GGGGC_Header *)p;
-                struct FreeObjHeader *newEntry = (struct FreeObjHeader *)(p + size);
+                struct FreeObjHeader *newEntry = (struct FreeObjHeader *)((ggc_size_t *)p + size);
                 newEntry->next = p->next;
                 newEntry->size = p->size - size;
+                if(!testFree(newEntry)){
+                    printf("Object should be free after splitting\n");
+                }
                 if(prev != NULL){
                     prev->next = newEntry;
+                    markFree((ggc_size_t *)prev);
                 }
                 else{
-                    currentPool->freelist = newEntry;
+                    currentPool->freelist = (struct FreeObjHeader *)maskMarks((ggc_size_t)(newEntry));
                 }
                 foundFreeSpace = 1;
                 break;
             }
+            prev = p;
+            p = (struct FreeObjHeader *)maskMarks((ggc_size_t)(p->next));
         }
         if(!foundFreeSpace){
             // Go to the next pool if possible
@@ -298,7 +397,7 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
             memset((void *)mem + sizeof(struct GGGGC_Header), 0xAA, size * sizeof(ggc_size_t) - sizeof(struct GGGGC_Header));
         }
     }
-    assertPtrAligned();
+    assertPtrAligned(mem);
 
     // maintain load factor
     allocated += size;
@@ -314,7 +413,7 @@ void *ggggc_malloc(struct GGGGC_Descriptor *descriptor)
     //objDump((struct GGGGC_Header *)descriptor);
     #endif
     struct GGGGC_Header *ret = (struct GGGGC_Header *) ggggc_mallocRaw(&descriptor, descriptor->size);
-    assertPtrAligned();
+    assertPtrAligned(ret);
     ret->descriptor__ptr = descriptor;
     return ret;
 }
@@ -437,6 +536,7 @@ void ggggc_collect0(unsigned char gen)
     jitPointerStackNode.next = ggggc_blockedThreadJITPointerStacks;
     ggggc_rootJITPointerStackList = &jitPointerStackNode;
 
+    assertParsableHeap();
     TOSEARCH_INIT(currentBlock);
 
     /* add our roots to the to-search list */
@@ -450,6 +550,7 @@ void ggggc_collect0(unsigned char gen)
                 printf("Adding root pointer %p\n", *(void **)psCur->pointers[wordval]);
                 printf("Current block: %p\n", currentBlock);
                 #endif
+                assertHeapPointer(*(void **)psCur->pointers[wordval]);
                 TOSEARCH_ADD(currentBlock, *(void **)psCur->pointers[wordval]);
             }
         }
@@ -459,6 +560,7 @@ void ggggc_collect0(unsigned char gen)
             #ifdef CHATTY
             printf("Adding JIT root pointer %p\n", *(void **)jpsCur);
             #endif
+            assertHeapPointer(*(void **)jpsCur);
             TOSEARCH_ADD(currentBlock, *(void **)jpsCur);
         }
     }
@@ -469,6 +571,7 @@ void ggggc_collect0(unsigned char gen)
     #endif
     while(!TOSEARCH_EMPTY(currentBlock)){
         TOSEARCH_POP(currentBlock, ggc_size_t *, pointer);
+        assertHeapPointer(pointer);
         // pointer --> obj header[ descriptor_ptr  --> descripor
         //                         DEADBEEF
         //                         value ... ]
@@ -490,7 +593,7 @@ void ggggc_collect0(unsigned char gen)
             abort();
         }
 #endif
-        if(*pointer & 1){    // already marked
+        if(testPointed(pointer)){    // already marked
             #ifdef CHATTY
             printf("Object already marked.\n");
             #endif
@@ -502,8 +605,9 @@ void ggggc_collect0(unsigned char gen)
         #ifdef CHATTY
         printf("Adding pointer %p\n", (void *)(*pointer));
         #endif
+        assertHeapPointer((void *)*pointer);
         TOSEARCH_ADD(currentBlock, (void *)*pointer);  // The descriptor pointer should always be alive
-        *pointer |= 1;
+        markPointed(pointer);
         #ifdef CHATTY
         for(int i = 0; i < descriptor->size; ++i){
             printf("Offset %08x: %lx\n", i * sizeof(ggc_size_t), *(pointer+i));
@@ -512,12 +616,13 @@ void ggggc_collect0(unsigned char gen)
         if(descriptor->pointers[0] & 1 != 0){
             // TODO: optimize
             for(wordval = 1; wordval < descriptor->size; ++wordval){
-                int word = wordval / sizeof(ggc_size_t);
-                unsigned int pos = wordval % sizeof(ggc_size_t);
+                int word = wordval / GGGGC_BITS_PER_WORD;
+                unsigned int pos = wordval % GGGGC_BITS_PER_WORD;
                 #ifdef CHATTY
                 printf("bitmap %lu\tpos %d\n", descriptor->pointers[word], pos);
                 #endif
                 if((descriptor->pointers[word] & (1 << pos)) != 0){
+                    assertHeapPointer((void *)*(pointer + wordval));
                     TOSEARCH_ADD(currentBlock, (void *)*(pointer + wordval));
                     #ifdef CHATTY
                     printf("Adding pointer %p\n", (void *)(*(pointer + wordval)));
@@ -533,13 +638,21 @@ void ggggc_collect0(unsigned char gen)
         freeListPointer = currentPool->freelist = NULL;
         secondLastFreeListPointer = NULL;
         for(pointer = currentPool->memSpace; pointer < currentPool->endptr;){
-            if((*pointer & 1) != 0){
+            if(testPointed(pointer)){
+                if(testFree(pointer)){
+                    printf("Object marked as free and pointed\n");
+                    abort();
+                }
                 // marked
-                *pointer &= ~1; // unmark
+                unmarkPointed(pointer); // unmark
                 wordval = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // record this now
                 #ifdef CHATTY
                 printf("Obj at %p is marked\n", pointer);
                 #endif
+            }
+            else if(testFree(pointer)){
+                // Free object from last collection
+                wordval = ((struct FreeObjHeader *)pointer)->size;
             }
             else{
                 // Unmarked, construct free object header
@@ -554,18 +667,23 @@ void ggggc_collect0(unsigned char gen)
                 ((struct FreeObjHeader *)pointer)->size = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // overwrites the 2nd word
                 // descriptor__ptr is valid because this object has not been marked
                 ((struct FreeObjHeader *)pointer)->next = NULL; // overwrites the 1st word
+                markFree(pointer);
                 // Do not zero the memory!
 
                 // Now maintain the free list
                 if(freeListPointer){
                     // TODO: merge consecutive blocks of empty memory
                     freeListPointer->next = (struct FreeObjHeader *)pointer;
-                    secondLastFreeListPointer = freeListPointer;
-                    freeListPointer = freeListPointer->next;
+                    markFree(freeListPointer);
+                    secondLastFreeListPointer = maskMarks((ggc_size_t)freeListPointer);
+                    freeListPointer = maskMarks((ggc_size_t)(freeListPointer->next));
                 }
                 else{
                     // The first free object in this pool
-                    freeListPointer = currentPool->freelist = (struct FreeObjHeader *)pointer;
+                    if(!testFree(pointer)){
+                        abort();
+                    }
+                    freeListPointer = currentPool->freelist = (struct FreeObjHeader *)pointer;  // pointer itself is never marked
                 }
             }
             #ifdef CHATTY
@@ -575,4 +693,5 @@ void ggggc_collect0(unsigned char gen)
         }
     }
     currentPool = poolList; // reset to the first pool
+    assertParsableHeap();
 }
