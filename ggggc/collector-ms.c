@@ -468,9 +468,11 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
             memset((void *)mem + sizeof(struct GGGGC_Header), 0xAA, size * sizeof(ggc_size_t) - sizeof(struct GGGGC_Header));
         }
     }
-    assertPtrAligned(mem);
+    #ifdef GUARD
+    assertPtrAligned(mem);  // Unaligned pointers must not leave our allocator
+    #endif
 
-    // maintain load factor
+    // Update load factor
     allocated += size;
     loadFactor = allocated / (double)available;
     return (void *)mem;
@@ -550,6 +552,7 @@ static struct ToSearch toSearchList;
     } \
 } while(0)
 
+// Debug function; Print all root pointers
 void pointerStackDump(){
     struct GGGGC_PointerStackList pointerStackNode, *pslCur;
     struct GGGGC_JITPointerStackList jitPointerStackNode, *jpslCur;
@@ -607,7 +610,9 @@ void ggggc_collect0(unsigned char gen)
     jitPointerStackNode.next = ggggc_blockedThreadJITPointerStacks;
     ggggc_rootJITPointerStackList = &jitPointerStackNode;
 
+    #ifdef GUARD
     assertParsableHeap();
+    #endif
     TOSEARCH_INIT(currentBlock);
 
     /* add our roots to the to-search list */
@@ -621,7 +626,9 @@ void ggggc_collect0(unsigned char gen)
                 printf("Adding root pointer %p\n", *(void **)psCur->pointers[wordval]);
                 printf("Current block: %p\n", currentBlock);
                 #endif
+                #ifdef GUARD
                 assertHeapPointer(*(void **)psCur->pointers[wordval]);
+                #endif
                 TOSEARCH_ADD(currentBlock, *(void **)psCur->pointers[wordval]);
             }
         }
@@ -631,7 +638,9 @@ void ggggc_collect0(unsigned char gen)
             #ifdef CHATTY
             printf("Adding JIT root pointer %p\n", *(void **)jpsCur);
             #endif
+            #ifdef GUARD
             assertHeapPointer(*(void **)jpsCur);
+            #endif
             TOSEARCH_ADD(currentBlock, *(void **)jpsCur);
         }
     }
@@ -642,7 +651,9 @@ void ggggc_collect0(unsigned char gen)
     #endif
     while(!TOSEARCH_EMPTY(currentBlock)){
         TOSEARCH_POP(currentBlock, ggc_size_t *, pointer);
+        #ifdef GUARD
         assertHeapPointer(pointer);
+        #endif
         // pointer --> obj header[ descriptor_ptr  --> descripor
         //                         DEADBEEF
         //                         value ... ]
@@ -670,13 +681,15 @@ void ggggc_collect0(unsigned char gen)
             #endif
             continue;
         }
+
         // The first word is the descriptor pointer in the GGGGC Header
-        
         struct GGGGC_Descriptor *descriptor = (struct GGGGC_Descriptor *)(*pointer);
         #ifdef CHATTY
         printf("Adding pointer %p\n", (void *)(*pointer));
         #endif
+        #ifdef GUARD
         assertHeapPointer((void *)*pointer);
+        #endif
         TOSEARCH_ADD(currentBlock, (void *)*pointer);  // The descriptor pointer should always be alive
         markPointed(pointer);
         #ifdef CHATTY
@@ -693,7 +706,9 @@ void ggggc_collect0(unsigned char gen)
                 printf("bitmap %lu\tpos %d\n", descriptor->pointers[word], pos);
                 #endif
                 if((descriptor->pointers[word] & (1 << pos)) != 0){
+                    #ifdef GUARD
                     assertHeapPointer((void *)*(pointer + wordval));
+                    #endif
                     TOSEARCH_ADD(currentBlock, (void *)*(pointer + wordval));
                     #ifdef CHATTY
                     printf("Adding pointer %p\n", (void *)(*(pointer + wordval)));
@@ -710,10 +725,12 @@ void ggggc_collect0(unsigned char gen)
         secondLastFreeListPointer = NULL;
         for(pointer = currentPool->memSpace; pointer < currentPool->endptr;){
             if(testPointed(pointer)){
+                #ifdef GUARD
                 if(testFree(pointer)){
                     printf("Object marked as free and pointed\n");
                     abort();
                 }
+                #endif
                 // marked
                 unmarkPointed(pointer); // unmark
                 wordval = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // record this now
@@ -751,9 +768,6 @@ void ggggc_collect0(unsigned char gen)
                 }
                 else{
                     // The first free object in this pool
-                    if(!testFree(pointer)){
-                        abort();
-                    }
                     freeListPointer = currentPool->freelist = (struct FreeObjHeader *)pointer;  // pointer itself is never marked
                 }
             }
@@ -764,5 +778,7 @@ void ggggc_collect0(unsigned char gen)
         }
     }
     currentPool = poolList; // reset to the first pool
+    #ifdef GUARD
     assertParsableHeap();
+    #endif
 }
