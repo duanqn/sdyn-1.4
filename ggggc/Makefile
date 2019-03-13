@@ -32,9 +32,12 @@ push:
 clean:
 	rm -f $(OBJS) $(TESTOBJS) libggggc.a deps
 
-test: collector-test
+test: collector-test collector-test2
 
-collector-test: $(OBJS) $(TESTOBJS)
+collector-test: $(OBJS) collector-ms_test.o
+	$(CC) $(CFLAGS) $^ -o $@ -lpthread
+
+collector-test2: $(OBJS) collector-ms_test2.o
 	$(CC) $(CFLAGS) $^ -o $@ -lpthread
 
 patch:
