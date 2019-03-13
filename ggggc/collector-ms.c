@@ -374,16 +374,18 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
                     #endif
                     // allocate new pools
                     err = 0;
-                    while(err == 0 && loadFactor > LOAD_IDEAL){
+                    // at least allocate 1 new pool
+                    do{
                         #ifdef CHATTY
                         printf("*** 1 new pool appended ***\n");
                         #endif
                         err = appendNewPool();
-                    }
+                    }while(err == 0 && loadFactor > LOAD_IDEAL);
                     expanded = 1;
                     goto CHECK;
                 }
                 else{
+                    // Should not hit here
                     return NULL;
                 }
             }
