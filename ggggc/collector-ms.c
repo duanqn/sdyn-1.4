@@ -8,6 +8,13 @@
 void ggggc_collect0(unsigned char gen);
 void pointerStackDump();
 
+/*
+    This is my own Pool structure.
+    next:   a pointer to the next pool
+    freelist:   a pointer to the first free object in this pool
+    endptr: a pointer to the first available (unallocated) word in this pool
+    memSpace:   a pointer to the first word that can be given to the mutator
+*/
 struct Pool{
     struct Pool *next;
     struct FreeObjHeader *freelist;
@@ -15,27 +22,54 @@ struct Pool{
     ggc_size_t memSpace[];
 };
 
+// The real pool size (excluding the pool header)
 #define POOL_SIZE ((GGGGC_POOL_BYTES) - 3 * sizeof(void *))
+// 3 constants for managing GC frequency
 #define LOAD_IDEAL 0.4
 #define LOAD_COLLECT 0.8
 #define LOAD_EXPAND 0.7
 
+/*
+    This is the header for free objects, i.e. free memory blocks.
+    Note the relationship between FreeObjHeader and GGGGC_Header.
+    In GGGGC_Header the first word is a pointer to the object's descriptor,
+    while here the first word is a pointer to the next free object.
+    Since the first word is used as a pointer in both structures,
+    we can use its least significant bits to mark it.
+    Bit 0x1 is used to mark the objects during GC.
+        Bit 0x1 is set -- object is marked
+    Bit 0x2 is used to differentiate a free object from an alive object.
+        Bit 0x2 is set -- this object is a free object
+    For alive objects, the first word is a valid pointer.
+
+    The second word in FreeObjHeader is the size of this free memory block.
+    We need to record the size because its descriptor might have been collected,
+    which means we can't use the descriptor to determine its size.
+*/
 struct FreeObjHeader{
-    struct FreeObjHeader *next;
+    struct FreeObjHeader *next; // This pointer is always marked (bit 0x2)
     ggc_size_t size;    // size in sizeof(ggc_size_t)
 };
 
+// Size of the larger header
 #define HEADER_SIZE (sizeof(struct FreeObjHeader) > sizeof(struct GGGGC_Header) ? \
 sizeof(struct FreeObjHeader) : sizeof(struct GGGGC_Header))
 
+// Some static global variables
+// For maintaining the linked list of pools
 static struct Pool *poolList = NULL;
 static struct Pool *currentPool = NULL;
 static struct Pool *lastPool = NULL;
+// For calculating load factor
 static ggc_size_t allocated = 0;
 static ggc_size_t available = 0;
 static double loadFactor = 0;
+// This program talks a lot if the CHATTY switch is turned on
+#ifdef CHATTY
 static int poolCount = 0;
+#endif
 
+// Fail fast if the pointer is not aligned to word boundary
 static inline void assertPtrAligned(void *ptr){
     if((ggc_size_t)(ptr) & (ggc_size_t)(sizeof(ggc_size_t) - 1)){
         printf("Error: free space pointer not aligned.\n");
@@ -43,35 +77,44 @@ static inline void assertPtrAligned(void *ptr){
     }
 }
 
+// Mask out the flags and cast it to a pointer
+// -- for convenience, since we only set flags on pointers
 inline ggc_size_t * maskMarks(ggc_size_t val){
     val &= (~0x3);
     return (ggc_size_t *)val;
 }
 
+// Mark a word (0x1)
 inline void markPointed(ggc_size_t *pos){
     *pos |= 0x1;
 }
 
+// Erase the mark on a word (0x1)
 inline void unmarkPointed(ggc_size_t *pos){
     *pos &= (~0x1);
 }
 
+// Mark a word (0x2)
 inline void markFree(ggc_size_t *pos){
     *pos |= 0x2;
 }
 
+// Erase the mark on a word (0x2)
 inline void unmarkFree(ggc_size_t *pos){
     *pos &= (~0x2);
 }
 
+// Test the flag (0x1)
 inline int testPointed(ggc_size_t *pos){
     return (*pos) & 0x1;
 }
 
+// Test the flag (0x2)
 inline int testFree(ggc_size_t *pos){
     return (*pos) & 0x2;
 }
 
+// Debug function; Prints the allocated part of a pool
 void poolDump(struct Pool *p){
     printf("===Pool dump===\n");
     printf("Next pool pointer: %p\n", p->next);
@@ -108,6 +151,7 @@ void poolDump(struct Pool *p){
     }
 }
 
+// Debug function; Prints the memory layout of an object
 void objDump(struct GGGGC_Header *header){
     ggc_size_t val = (ggc_size_t)header->descriptor__ptr;
     val &= ~1;
@@ -120,6 +164,7 @@ void objDump(struct GGGGC_Header *header){
     }
 }
 
+// Debug function; Dumps all pools and root pointers
 void fullDump(){
     printf("=====Full heap dump=====\n");
     printf("Global load factor: %lf\n", loadFactor);
@@ -131,6 +176,7 @@ void fullDump(){
     printf("=====End=====\n");
 }
 
+// Debug function; Prints all free list entries in a pool
 void freeListDump(struct Pool *pool){
     struct FreeObjHeader *header = pool->freelist;
     printf("*** Freelist of pool %p:\n", pool);
@@ -145,6 +191,7 @@ void freeListDump(struct Pool *pool){
     printf("***End\n");
 }
 
+// Fail fast if this pointer is pointing to an address outside of any known pool
 static inline void assertHeapPointer(void * ptr){
     if(!ptr){
         return;
@@ -158,6 +205,8 @@ static inline void assertHeapPointer(void * ptr){
     abort();
 }
 
+// Debug function; Walks through all pools to check the parsability
+// As slow as GC
 static void assertParsableHeap(){
     for(struct Pool *pool = poolList; pool; pool = pool->next){
         ggc_size_t *objPointer = pool->memSpace;
@@ -181,37 +230,41 @@ static void assertParsableHeap(){
     }
 }
 
+// Ask the OS to give us a new pool
 int allocNewPool(void ** pool)
 {
     void *ret;
     if ((errno = posix_memalign(pool, GGGGC_POOL_BYTES, GGGGC_POOL_BYTES))) {
         return -1;
     }
+    #ifdef CHATTY
     ++poolCount;
+    #endif
     return 0;
 }
 
+// Allocate a new pool and initialize it
 struct Pool *newPool(){
     struct Pool *ret;
-    // then allocate a new one
     if(allocNewPool((void **)&ret)){
         printf("Failed to allocate a new pool.\n");
         return NULL;
     }
 
     /* set it up */
-    // need to fix
     ret->next = NULL;
     ret->freelist = NULL;
     ret->endptr = ret->memSpace;
     assertPtrAligned(ret->endptr);
 
+    // Update the load factor
     available += POOL_SIZE / sizeof(ggc_size_t);
     loadFactor = allocated / (double)available;
 
     return ret;
 }
 
+// Allocate a new pool, initialize it, and append it to the linked list
 int appendNewPool(){
     struct Pool *p = newPool();
     if(p == NULL){
@@ -254,6 +307,7 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
     int foundFreeSpace = 0;
     int GC_ed = 0;
     int expanded = 0;
+    // Allocate a pool if there is none
     if(currentPool == NULL){
         if(poolList == NULL){
             err = appendNewPool();
@@ -264,13 +318,17 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
         }
         currentPool = poolList;
     }
+    #ifdef GUARD
     assertPtrAligned(currentPool->endptr);
+    #endif
     // must have enough room for the header
     if(size * sizeof(ggc_size_t) < HEADER_SIZE){
         size = HEADER_SIZE / sizeof(ggc_size_t);    // must ensure HEADER_SIZE is multiple of sizeof(ggc_size_t)
     }
     CHECK:
+    #ifdef GUARD
     assertPtrAligned(currentPool->endptr);
+    #endif
     // check if there is enough space in current pool
     if((unsigned char *)(currentPool->memSpace) + POOL_SIZE >= currentPool->endptr + size){
         // bump pointer
@@ -294,28 +352,35 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
         printf("*** Search free list ***\n");
         #endif
         for(struct FreeObjHeader *prev = NULL, *p = currentPool->freelist; p;){
+            #ifdef GUARD
             if(!testFree((ggc_size_t *)p)){
                 printf("Object not marked as free\n");
                 assertParsableHeap();
                 abort();
             }
+            #endif
             if(p->size == size){
                 // perfect
                 mem = (struct GGGGC_Header *)p;
                 // remove p from free list
                 if(prev != NULL){
+                    #ifdef GUARD
                     if(!testFree(p) || !testFree(prev)){
                         printf("p and prev should both be marked.\n");
                         abort();
                     }
+                    #endif
                     prev->next = p->next;
                 }
                 else{
+                    // First entry in the free list
                     currentPool->freelist = (struct FreeObjHeader *)maskMarks((ggc_size_t)(p->next));
+                    #ifdef GUARD
                     if(currentPool->freelist!= NULL && !testFree(currentPool->freelist)){
                         printf("p->next should both be marked.\n");
                         abort();
                     }
+                    #endif
                 }
                 foundFreeSpace = 1;
                 break;
@@ -326,9 +391,11 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
                 struct FreeObjHeader *newEntry = (struct FreeObjHeader *)((ggc_size_t *)p + size);
                 newEntry->next = p->next;
                 newEntry->size = p->size - size;
+                #ifdef GUARD
                 if(!testFree(newEntry)){
                     printf("Object should be free after splitting\n");
                 }
+                #endif
                 if(prev != NULL){
                     prev->next = newEntry;
                     markFree((ggc_size_t *)prev);
@@ -358,6 +425,7 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
                 ggggc_collect0(0);
                 GGC_POP();
                 GC_ed = 1;
+                // Still too full?
                 if(loadFactor > LOAD_EXPAND){
                     err = 0;
                     while(err == 0 && loadFactor > LOAD_IDEAL){
