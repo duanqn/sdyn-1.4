@@ -244,7 +244,8 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
     #ifdef CHATTY
     printf("Raw malloc %lu bytes\n", size * sizeof(size));
     #endif
-    if(size * sizeof(size) > POOL_SIZE){
+    // size too large?
+    if(size > POOL_SIZE / sizeof(ggc_size_t)){
         printf("Requested space cannot fit in a pool.\n");
         return NULL;
     }
