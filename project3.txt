@@ -1,0 +1,4 @@
+Free list allocation strategy: first-first
+    Exception: When the available free block is exactly 1 word larger than the requested size, it is impossible to split the free block. In this case, the free block would be treated as unfit, although it is larger than the requested size. The allocator will move on to the next entry in the free list. If this action causes the allocator to switch to a new pool, this free space will be wasted, but it will be reclaimed during the next GC.
+
+When to GC:
