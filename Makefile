@@ -1,6 +1,6 @@
 CC=gcc
 CLIFLAG = 
-ECFLAGS=-Og -g -DGGGGC_DEBUG_MEMORY_CORRUPTION $(CLIFLAG)
+ECFLAGS=-g $(CLIFLAG)
 CFLAGS=-Ih -Iggggc -Ismalljitasm $(ECFLAGS)
 LLIBS=ggggc/libggggc.a smalljitasm/libsmalljitasm.a
 LIBS=$(LLIBS) -pthread
