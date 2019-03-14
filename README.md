@@ -14,4 +14,4 @@ Collector), in `ggggc`, and SJA (small JIT assembler), included in
 `smalljitasm`.
 
 ## License
-Anything that exists at commit 4bcd336bf886ae67b0cf8f819349db3b5f3868ad is distributed under the ISC license, which is provided in the LICENSE file.
+Anything that exists at commit 4bcd336bf886ae67b0cf8f819349db3b5f3868ad is distributed under the ISC license, which is provided in the Sdyn-LICENSE file.
