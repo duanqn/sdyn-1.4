@@ -229,7 +229,7 @@ static void assertParsableHeap(){
             }
             else{
                 assertHeapPointer(*objPointer);
-                objPointer += ((struct GGGGC_Descriptor *)(*objPointer))->size;
+                objPointer += (((struct GGGGC_Descriptor *)(*objPointer))->size) > HEADER_SIZE ? (((struct GGGGC_Descriptor *)(*objPointer))->size) : HEADER_SIZE;
             }
         }
     }
@@ -761,6 +761,10 @@ void ggggc_collect0(unsigned char gen)
                 // marked
                 unmarkPointed(pointer); // unmark
                 wordval = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // record this now
+                // If this size is too small, we must have overallocated
+                if(wordval < HEADER_SIZE / sizeof(ggc_size_t)){
+                    wordval = HEADER_SIZE / sizeof(ggc_size_t);
+                }
                 allocated += wordval;
                 #ifdef CHATTY
                 printf("Obj at %p is marked\n", pointer);
@@ -780,6 +784,10 @@ void ggggc_collect0(unsigned char gen)
                 printf("Obj at %p is not marked\n", pointer);
                 #endif
                 wordval = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // record this now
+                // If this size is too small, we must have overallocated
+                if(wordval < HEADER_SIZE / sizeof(ggc_size_t)){
+                    wordval = HEADER_SIZE / sizeof(ggc_size_t);
+                }
                 ((struct FreeObjHeader *)pointer)->size = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // overwrites the 2nd word
                 // descriptor__ptr is valid because this object has not been marked
                 ((struct FreeObjHeader *)pointer)->next = NULL; // overwrites the 1st word
