@@ -4,9 +4,11 @@
 void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to protect, if applicable */
     ggc_size_t size /* size of object to allocate */
     );
-void fullDump();
 void ggggc_collect0(unsigned char gen);
+#ifdef CHATTY
+void fullDump();
 void pointerStackDump();
+#endif
 
 struct ListNode{
     struct GGGGC_Header header;
@@ -47,7 +49,9 @@ int main(){
     #else
     genesis->pointers[0] = 0x5;
     #endif
+    #ifdef CHATTY
     fullDump();
+    #endif
     
     struct GGGGC_Descriptor *ListNode_Descriptor = ggggc_malloc(genesis);
     ListNode_Descriptor->size = sizeof(struct ListNode) / sizeof(ggc_size_t);
@@ -74,7 +78,9 @@ int main(){
         printf("Append node %u\n", i);
         append(i, head, ListNode_Descriptor);
     }
+    #ifdef CHATTY
     fullDump();
+    #endif
     GGC_POP();
     return 0;
 }
