@@ -116,6 +116,8 @@ inline int testFree(ggc_size_t *pos){
     return (*pos) & 0x2;
 }
 
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 #ifdef CHATTY
 // Debug function; Prints the allocated part of a pool
 void poolDump(struct Pool *p){
@@ -229,7 +231,7 @@ static void assertParsableHeap(){
             }
             else{
                 assertHeapPointer(*objPointer);
-                objPointer += (((struct GGGGC_Descriptor *)(*objPointer))->size) > HEADER_SIZE ? (((struct GGGGC_Descriptor *)(*objPointer))->size) : HEADER_SIZE;
+                objPointer += MAX(((struct GGGGC_Descriptor *)(*objPointer))->size, HEADER_SIZE / sizeof(ggc_size_t));
             }
         }
     }
