@@ -64,7 +64,7 @@ static struct Pool *lastPool = NULL;
 static ggc_size_t allocated = 0;
 static ggc_size_t available = 0;
 static double loadFactor = 0;
-// This program talks a lot if the CHATTY switch is turned on
+// This program talks a lot when the CHATTY switch is turned on
 #ifdef CHATTY
 static int poolCount = 0;
 #endif
