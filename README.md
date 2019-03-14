@@ -1,3 +1,4 @@
+## Sdyn
 SDyn is a small dynamic language JIT. It is intended to be useful for
 eductional audiences, because while it does do all the necessary madness to
 qualify as a JIT, it does very little more than that.
@@ -11,3 +12,6 @@ e.g. jit-x8664.c, and is documented in those files.
 SDyn depends on GGGGC (Gregor's General-purpose Generational Garbage
 Collector), in `ggggc`, and SJA (small JIT assembler), included in
 `smalljitasm`.
+
+## License
+Anything that exists at commit 4bcd336bf886ae67b0cf8f819349db3b5f3868ad is distributed under the ISC license, which is provided in the LICENSE file.
