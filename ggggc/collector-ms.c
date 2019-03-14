@@ -465,7 +465,7 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
             /* set its canary */
             mem->ggggc_memoryCorruptionCheck = GGGGC_MEMORY_CORRUPTION_VAL;
             #endif
-            memset((void *)mem + sizeof(struct GGGGC_Header), 0xAA, size * sizeof(ggc_size_t) - sizeof(struct GGGGC_Header));
+            memset((void *)mem + sizeof(struct GGGGC_Header), 0, size * sizeof(ggc_size_t) - sizeof(struct GGGGC_Header));
         }
     }
     #ifdef GUARD
