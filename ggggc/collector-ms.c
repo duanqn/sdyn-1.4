@@ -69,6 +69,7 @@ static double loadFactor = 0;
 static int poolCount = 0;
 #endif
 
+#ifdef GUARD
 // Fail fast if the pointer is not aligned to word boundary
 static inline void assertPtrAligned(void *ptr){
     if((ggc_size_t)(ptr) & (ggc_size_t)(sizeof(ggc_size_t) - 1)){
@@ -76,6 +77,7 @@ static inline void assertPtrAligned(void *ptr){
         abort();
     }
 }
+#endif
 
 // Mask out the flags and cast it to a pointer
 // -- for convenience, since we only set flags on pointers
@@ -191,6 +193,7 @@ void freeListDump(struct Pool *pool){
     printf("***End\n");
 }
 
+#ifdef GUARD
 // Fail fast if this pointer is pointing to an address outside of any known pool
 static inline void assertHeapPointer(void * ptr){
     if(!ptr){
@@ -229,6 +232,7 @@ static void assertParsableHeap(){
         }
     }
 }
+#endif
 
 // Ask the OS to give us a new pool
 int allocNewPool(void ** pool)
@@ -255,7 +259,9 @@ struct Pool *newPool(){
     ret->next = NULL;
     ret->freelist = NULL;
     ret->endptr = ret->memSpace;
+    #ifdef GUARD
     assertPtrAligned(ret->endptr);
+    #endif
 
     // Update the load factor
     available += POOL_SIZE / sizeof(ggc_size_t);
@@ -486,7 +492,9 @@ void *ggggc_malloc(struct GGGGC_Descriptor *descriptor)
     //objDump((struct GGGGC_Header *)descriptor);
     #endif
     struct GGGGC_Header *ret = (struct GGGGC_Header *) ggggc_mallocRaw(&descriptor, descriptor->size);
+    #ifdef GUARD
     assertPtrAligned(ret);
+    #endif
     ret->descriptor__ptr = descriptor;
     return ret;
 }
