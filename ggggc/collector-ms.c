@@ -352,7 +352,7 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
     assertPtrAligned(currentPool->endptr);
     #endif
     // check if there is enough space in current pool
-    if((unsigned char *)(currentPool->memSpace) + POOL_SIZE >= currentPool->endptr + size){
+    if((unsigned char *)(currentPool->memSpace) + POOL_SIZE >= (unsigned char *)(currentPool->endptr + size)){
         // bump pointer
         #ifdef CHATTY
         printf("*** Bump pointer ***\n");
@@ -697,7 +697,7 @@ void ggggc_collect0(unsigned char gen)
         if (((struct GGGGC_Header *)pointer)->ggggc_memoryCorruptionCheck != GGGGC_MEMORY_CORRUPTION_VAL) {
             fprintf(stderr, "GGGGC: Canary corrupted!\n");
             fprintf(stderr, "Canary address: %p\n", &(((struct GGGGC_Header *)pointer)->ggggc_memoryCorruptionCheck));
-            fprintf(stderr, "Got: %lu\tExpected: %lu\n", ((struct GGGGC_Header *)pointer)->ggggc_memoryCorruptionCheck, GGGGC_MEMORY_CORRUPTION_VAL);
+            fprintf(stderr, "Got: %lu\tExpected: %u\n", ((struct GGGGC_Header *)pointer)->ggggc_memoryCorruptionCheck, GGGGC_MEMORY_CORRUPTION_VAL);
             abort();
         }
 #endif
@@ -790,9 +790,9 @@ void ggggc_collect0(unsigned char gen)
                 if(freeListPointer){
                     // TODO: merge consecutive blocks of empty memory
                     freeListPointer->next = (struct FreeObjHeader *)pointer;
-                    markFree(freeListPointer);
-                    secondLastFreeListPointer = maskMarks((ggc_size_t)freeListPointer);
-                    freeListPointer = maskMarks((ggc_size_t)(freeListPointer->next));
+                    markFree((ggc_size_t *)freeListPointer);
+                    secondLastFreeListPointer = (struct FreeObjHeader *)maskMarks((ggc_size_t)freeListPointer);
+                    freeListPointer = (struct FreeObjHeader *)maskMarks((ggc_size_t)(freeListPointer->next));
                 }
                 else{
                     // The first free object in this pool
