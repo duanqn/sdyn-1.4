@@ -1,4 +1,31 @@
-Free list allocation strategy: first-first
+Free list allocation strategy: first-fit
     Exception: When the available free block is exactly 1 word larger than the requested size, it is impossible to split the free block. In this case, the free block would be treated as unfit, although it is larger than the requested size. The allocator will move on to the next entry in the free list. If this action causes the allocator to switch to a new pool, this free space will be wasted, but it will be reclaimed during the next GC.
 
 When to GC:
+    GC is performed when
+        1) there is not enough memory to allocate (called from ggggc_mallocRaw)
+        2) the heap is nearly full (called from ggggc_yield)
+    The memory manager keeps track of the load factor (the percentage of allocated memory), and performs a GC when it is higher than LOAD_COLLECT. After GC, if the load factor is still higher than LOAD_EXPAND, the memory manager will add new pools until the it drops below LOAD_IDEAL.
+
+Flags:
+    In both free objects and alive objects, the first word is always a pointer. This pointer is aligned to word boundary, which means we have at least 2 bits that can be used as flags.
+
+    Bit 0x1 is used to mark the objects during GC.
+        Bit 0x1 is set -- object is marked
+    Bit 0x2 is used to distinguish a free object from an alive object.
+        Bit 0x2 is set -- this object is a free object
+    N.B. For alive objects, the first word is a valid pointer.
+
+Misc:
+    If the requested space is smaller than an object header, the allocator will allocate the size of a header.
+
+Unsupported features:
+    This memory manager does not support free object coalescence. Nor does it support objects larger than an entire pool.
+
+=====================
+I came across a strange bug. If you rewind the repository to commit 2f5e39a0f55e64436fddeb427f10b6, you'll find that version cannot survive the `gcc -O3` optimization. It does work in -Og, so I think there is a bug in gcc.
+I have tested with gcc 5.5.0 and 7.3.0. They both have this problem.
+I printed the disassembly of sdyn, and picked out the ggggc_mallocRaw function (stored in mallocRaw.asm).
+I think the reason is gcc optimizes away a line of code. Line 424 of collector-ms.c disappears in the O3-optimized code. If you read through the assembly, offset 73ac6 corresponds to line 425 (setting the free flag), which means %r8 is prev and (%r8) is prev->next, and there is no sign of line 424 near that address.
+The consequence is that the free list is broken, and if the allocator walks along the list, it will wonder into some alive objects, and follow their descriptor pointer. Eventually it will run into an infinite loop because the 'root' descriptor points to itself.
+I solved this problem by rewriting the code. I guess I'm writing about this just because I feel so disappointed after spending hours to debug this single problem.
