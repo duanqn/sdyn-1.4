@@ -428,9 +428,9 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
                 // Still too full?
                 if(loadFactor > LOAD_EXPAND){
                     err = 0;
-                    while(err == 0 && loadFactor > LOAD_IDEAL){
+                    do{
                         err = appendNewPool();
-                    }
+                    }while(err == 0 && loadFactor > LOAD_IDEAL);
                     expanded = 1;
                 }
                 goto CHECK;
