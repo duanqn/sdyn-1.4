@@ -116,6 +116,7 @@ inline int testFree(ggc_size_t *pos){
     return (*pos) & 0x2;
 }
 
+#ifdef CHATTY
 // Debug function; Prints the allocated part of a pool
 void poolDump(struct Pool *p){
     printf("===Pool dump===\n");
@@ -192,6 +193,7 @@ void freeListDump(struct Pool *pool){
     }
     printf("***End\n");
 }
+#endif
 
 #ifdef GUARD
 // Fail fast if this pointer is pointing to an address outside of any known pool
@@ -293,6 +295,20 @@ int ggggc_yield(){
     // Pretend we are waiting for something
     // check heap usage
     // collect if load factor is too large
+    int err = 0;
+    if(loadFactor > LOAD_COLLECT){
+        ggggc_collect0(0);
+        if(loadFactor > LOAD_EXPAND){
+            err = 0;
+            // at least allocate 1 new pool
+            do{
+                #ifdef CHATTY
+                printf("*** 1 new pool appended ***\n");
+                #endif
+                err = appendNewPool();
+            }while(err == 0 && loadFactor > LOAD_IDEAL);
+        }
+    }
     return 0;
 }
 
@@ -560,6 +576,7 @@ static struct ToSearch toSearchList;
     } \
 } while(0)
 
+#ifdef CHATTY
 // Debug function; Print all root pointers
 void pointerStackDump(){
     struct GGGGC_PointerStackList pointerStackNode, *pslCur;
@@ -594,6 +611,7 @@ void pointerStackDump(){
         }
     }
 }
+#endif
 
 /* run a generation 0 collection */
 void ggggc_collect0(unsigned char gen)
@@ -728,6 +746,7 @@ void ggggc_collect0(unsigned char gen)
 
     // Sweep
     // wordval used to keep the next step length
+    allocated = 0;
     for(currentPool = poolList; currentPool; currentPool = currentPool->next){
         freeListPointer = currentPool->freelist = NULL;
         secondLastFreeListPointer = NULL;
@@ -742,6 +761,7 @@ void ggggc_collect0(unsigned char gen)
                 // marked
                 unmarkPointed(pointer); // unmark
                 wordval = ((struct GGGGC_Header *)pointer)->descriptor__ptr->size;  // record this now
+                allocated += wordval;
                 #ifdef CHATTY
                 printf("Obj at %p is marked\n", pointer);
                 #endif
@@ -785,6 +805,7 @@ void ggggc_collect0(unsigned char gen)
             pointer += wordval;
         }
     }
+    loadFactor = allocated / (double)available; // Update load factor
     currentPool = poolList; // reset to the first pool
     #ifdef GUARD
     assertParsableHeap();
