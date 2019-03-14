@@ -411,22 +411,8 @@ void *ggggc_mallocRaw(struct GGGGC_Descriptor **descriptor, /* descriptor to pro
             }
             else if(p->size >= size + sizeof(struct FreeObjHeader) / sizeof(ggc_size_t)){
                 // split
-                mem = (struct GGGGC_Header *)p;
-                struct FreeObjHeader *newEntry = (struct FreeObjHeader *)((ggc_size_t *)p + size);
-                newEntry->next = p->next;
-                newEntry->size = p->size - size;
-                #ifdef GUARD
-                if(!testFree(newEntry)){
-                    printf("Object should be free after splitting\n");
-                }
-                #endif
-                if(prev != NULL){
-                    prev->next = newEntry;
-                    markFree((ggc_size_t *)prev);
-                }
-                else{
-                    currentPool->freelist = (struct FreeObjHeader *)maskMarks((ggc_size_t)(newEntry));
-                }
+                mem = (ggc_size_t *)p + (p->size - size);
+                p->size -= size;
                 foundFreeSpace = 1;
                 break;
             }
