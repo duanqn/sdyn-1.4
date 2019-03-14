@@ -509,7 +509,6 @@ SDyn_Undefined sdyn_toValue(void **pstack, SDyn_Undefined value)
 }
 
 /* assertions */
-void fullDump();
 SDyn_Function sdyn_assertFunction(void **pstack, SDyn_Function func)
 {
     SDyn_Tag tag = NULL;
@@ -519,7 +518,6 @@ SDyn_Function sdyn_assertFunction(void **pstack, SDyn_Function func)
 
     tag = (SDyn_Tag) GGC_RUP(func);
     if (GGC_RD(tag, type) != SDYN_TYPE_FUNCTION) {
-        fullDump();
         fprintf(stderr, "Attempt to call a non-function (type %d)!\n", GGC_RD(tag, type));
         abort();
     }
